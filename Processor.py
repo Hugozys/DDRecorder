@@ -4,7 +4,7 @@ import shutil
 import os
 import subprocess
 import traceback
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 import logging
 import ffmpeg
 import utils
@@ -198,15 +198,16 @@ class Processor(BiliLive):
             self.outputs_dir, f"{self.room_id}_{self.global_start.strftime('%Y-%m-%d_%H-%M-%S')}_{hours:02}-{minutes:02}-{seconds:02}_{outhint}.mp4")
         cmd = f'ffmpeg -y -ss {start_time} -t {delta} -accurate_seek -i "{self.merged_file_path}" -c copy -avoid_negative_ts 1 "{output_file}"'
         try:
-            ret = subprocess.run(cmd, shell=True, check=True,
+            ret = subprocess.run(cmd, shell=True, capture_output = True, check=True,
                                  stdout=self.ffmpeg_logfile_hander, stderr=self.ffmpeg_logfile_hander)
             return ret
         except subprocess.CalledProcessError as err:
             traceback.print_exc()
             return err
 
-    def cut(self, cut_points: List[Tuple[datetime.datetime, datetime.datetime, List[str]]], min_length: int = 60) -> bool:
+    def cut(self, cut_points: List[Tuple[datetime.datetime, datetime.datetime, List[str]]], min_length: int = 60) -> Tuple[bool, List[Any]]:
         success = True
+        errorList = []
         duration = float(ffmpeg.probe(self.merged_file_path)
                          ['format']['duration'])
         for cut_start, cut_end, tags in cut_points:
@@ -222,10 +223,13 @@ class Processor(BiliLive):
                     0, int(start)), int(delta))
                 success = success and isinstance(
                     ret, subprocess.CompletedProcess)
-        return success
+                if isinstance(ret, subprocess.CalledProcessError):
+                    errorList.append(ret.stderr)
+        return success, errorList
 
-    def split(self, split_interval: int = 3600) -> bool:
+    def split(self, split_interval: int = 3600) -> Tuple[bool, List[Any]]:
         success = True
+        errList = []
         if split_interval <= 0:
             shutil.copy2(self.merged_file_path, os.path.join(
                 self.splits_dir, f"{self.room_id}_{self.global_start.strftime('%Y-%m-%d_%H-%M-%S')}_0000.mp4"))
@@ -239,18 +243,20 @@ class Processor(BiliLive):
                 self.splits_dir, f"{self.room_id}_{self.global_start.strftime('%Y-%m-%d_%H-%M-%S')}_{i:04}.mp4")
             cmd = f'ffmpeg -y -ss {i*split_interval} -t {split_interval} -accurate_seek -i "{self.merged_file_path}" -c copy -avoid_negative_ts 1 "{output_file}"'
             try:
-                _ = subprocess.run(cmd, shell=True, check=True,
+                _ = subprocess.run(cmd, capture_output=True, shell=True, check=True,
                                    stdout=self.ffmpeg_logfile_hander, stderr=self.ffmpeg_logfile_hander)
-            except subprocess.CalledProcessError:
+            except subprocess.CalledProcessError as err:
                 traceback.print_exc()
                 success = False
-        return success
+                errList.append(err.stderr)
+        return success, errList
 
     def run(self) -> bool:
         try:
             ret = self.pre_concat()
             success = isinstance(ret, subprocess.CompletedProcess)
             if success and not self.config.get('spec', {}).get('recorder', {}).get('keep_raw_record', False):
+                logging.info("Deleting raw record...")
                 if os.path.exists(self.merged_file_path):
                     utils.del_files_and_dir(self.record_dir)
             # duration = float(ffmpeg.probe(self.merged_file_path)[
@@ -276,8 +282,10 @@ class Processor(BiliLive):
                     danmu_list, self.live_start, self.live_duration, self.config.get('spec', {}).get('parser', {}).get('interval', 60))
                 cut_points = get_cut_points(counted_danmu_dict, self.config.get('spec', {}).get('parser', {}).get('up_ratio', 2.5),
                                             self.config.get('spec', {}).get('parser', {}).get('down_ratio', 0.75), self.config.get('spec', {}).get('parser', {}).get('topK', 5))
-                ret = self.cut(cut_points, self.config.get('spec', {}).get(
+                ret, errorList = self.cut(cut_points, self.config.get('spec', {}).get(
                     'clipper', {}).get('min_length', 60))
+                if not ret:
+                    logging.error(f"error happened in clipper: {errorList}")
                 success = success and ret
             if self.config.get('spec', {}).get('manual_clipper', {}).get('enabled', False):
                 logging.info('Processing manual clipper')
@@ -287,11 +295,16 @@ class Processor(BiliLive):
                     self.config.get('spec', {}).get('manual_clipper', {}).get('uid', ""),
                     self.config.get('spec', {}).get('manual_clipper', {}).get('command', '/DDR clip'),
                 )
-                ret = self.cut(cut_points, 0)
+                ret, errorList = self.cut(cut_points, 0)
+                if not ret:
+                    logging.error(f"error happened in manual clipper: {errorList}")
                 success = success and ret
             if self.config.get('spec', {}).get('uploader', {}).get('record', {}).get('upload_record', False):
-                ret = self.split(self.config.get('spec', {}).get('uploader', {})
+                logging.info("Spliting merged reocrds to multiple chunks...")
+                ret, errorList = self.split(self.config.get('spec', {}).get('uploader', {})
                                  .get('record', {}).get('split_interval', 3600))
+                if not ret:
+                    logging.error(f"error happeened in record splitter: {errorList}")
                 success = success and ret
             return success
         except:

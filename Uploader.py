@@ -72,7 +72,7 @@ class Uploader(BiliLive):
                 self.uploader.video = clips_video_data
                 filelists = os.listdir(self.output_dir)
                 filelists.sort(key=lambda x: int(
-                    os.path.splitext(x)[0].split("_")[-2]))
+                    "".join(os.path.splitext(x)[0].split("_")[-2].split("-"))))
                 for filename in filelists:
                     if os.path.getsize(os.path.join(self.output_dir, filename)) < 1024*1024:
                         continue
@@ -147,7 +147,7 @@ class Uploader(BiliLive):
 
 
 if __name__ == '__main__':
-    all_config_filename = 'config/config.spec.json'
+    all_config_filename = 'config/config.json'
     with open(all_config_filename, "r", encoding="UTF-8") as f:
         all_config = json.load(f)
 
@@ -156,6 +156,6 @@ if __name__ == '__main__':
         'spec': all_config['spec'][0]
     }
     uploader = Uploader(
-        output_dir='data\\data\\outputs\\8792912_2022-04-16_06-58-40', splits_dir='', config=config)
+        output_dir='data/outputs/22758221_2022-08-11_13-16-28/', splits_dir='data/splits/22758221_2022-08-11_13-16-28', config=config)
     uploader.upload(global_start=datetime.datetime.strptime(
-        '2022-04-16_06-58-40', '%Y-%m-%d_%H-%M-%S'))
+        '2022-08-11_13-16-28', '%Y-%m-%d_%H-%M-%S'))

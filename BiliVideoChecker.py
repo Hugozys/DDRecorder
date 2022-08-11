@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import threading
+from typing import List
 import requests
 import urllib3
 import utils
@@ -11,7 +12,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class BiliVideoChecker(threading.Thread):
-    def __init__(self, bvid: str, path: str, config: dict):
+    def __init__(self, bvid: str, paths: List[str], config: dict):
         threading.Thread.__init__(self)
         default_headers = {
             'Accept': 'application/json, text/javascript, */*; q=0.01',
@@ -24,7 +25,7 @@ class BiliVideoChecker(threading.Thread):
                         config.get('root', {}).get('request_header', {})}
         self.session = requests.session()
         self.bvid = bvid
-        self.path = path
+        self.paths = paths
         self.config = config
         self.check_url = "https://api.bilibili.com/x/web-interface/view"
         self.check_interval = config['root']['check_interval']
@@ -51,8 +52,8 @@ class BiliVideoChecker(threading.Thread):
             }).json()
             try:
                 if video_info['code'] == 0 and video_info['data']['state'] == 0:
-                    logging.info("稿件%s 已开放浏览，准备删除 %s", self.bvid, self.path)
-                    utils.del_files_and_dir(self.path)
+                    logging.info("稿件%s 已开放浏览，准备删除 %s", self.bvid, self.paths)
+                    utils.del_files_and_dirs(self.paths)
                     return
                 else:
                     logging.info("稿件%s 未开放浏览", self.bvid)

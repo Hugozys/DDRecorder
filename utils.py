@@ -7,6 +7,7 @@ import os
 import platform
 import threading
 from enum import Enum
+from typing import List
 
 import prettytable as pt
 from fastHan import FastHan
@@ -111,6 +112,10 @@ def del_files_and_dir(dirs: str) -> None:
     for filename in os.listdir(dirs):
         os.remove(os.path.join(dirs, filename))
     os.rmdir(dirs)
+
+def del_files_and_dirs(dirs: List[str]) -> None:
+    for dir in dirs:
+        del_files_and_dir(dir)
 
 
 def get_rough_time(hour: int) -> str:
